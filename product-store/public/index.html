@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Product Browser</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f4f4f9; color: #111; }
+    .app { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    h1 { margin-top: 0; font-size: 2rem; }
+    .controls { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+    .controls select, .controls button { padding: 10px 14px; border-radius: 8px; border: 1px solid #c7c7d3; background: white; }
+    .controls button { cursor: pointer; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .results { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+    .card { background: white; border-radius: 16px; padding: 18px; box-shadow: 0 8px 24px rgba(0,0,0,0.06); }
+    .card h2 { margin: 0 0 10px; font-size: 1.1rem; }
+    .meta { color: #666; font-size: 0.9rem; margin-bottom: 12px; }
+    .tag { display: inline-block; margin-right: 6px; background: #eef2ff; color: #3f51b5; padding: 3px 9px; border-radius: 999px; font-size: 0.8rem; }
+    .price { font-weight: bold; font-size: 1rem; margin-top: 10px; }
+    .status { margin-top: 4px; color: #555; }
+    .footer { margin-top: 24px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .footer button { width: 160px; }
+    .loading, .error { padding: 18px; background: #fff1f0; border: 1px solid #ffcccc; border-radius: 12px; margin-bottom: 20px; color: #9c2a2a; }
+    .summary { font-size: 0.95rem; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Product Browser</h1>
+    <div class="toolbar">
+      <div class="controls">
+        <label>
+          Category:
+          <select id="categorySelect">
+            <option value="">All categories</option>
+          </select>
+        </label>
+        <label>
+          Page size:
+          <select id="pageSizeSelect">
+            <option value="20">20</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+      </div>
+      <div class="summary" id="summary">Loading products...</div>
+    </div>
+    <div id="status"></div>
+    <div class="results" id="results"></div>
+    <div class="footer">
+      <button id="prevBtn" disabled>Previous</button>
+      <button id="nextBtn" disabled>Next</button>
+    </div>
+  </div>
+
+  <script>
+    const categorySelect = document.getElementById('categorySelect');
+    const pageSizeSelect = document.getElementById('pageSizeSelect');
+    const results = document.getElementById('results');
+    const status = document.getElementById('status');
+    const summary = document.getElementById('summary');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+
+    let currentCategory = '';
+    let currentLimit = 50;
+    let pageHistory = [];
+    let currentCursor = null;
+    let nextCursor = null;
+    let isLoading = false;
+
+    const friendlyDate = (iso) => new Date(iso).toLocaleString();
+
+    const updateButtons = () => {
+      prevBtn.disabled = pageHistory.length === 0;
+      nextBtn.disabled = !nextCursor;
+    };
+
+    const showStatus = (message, isError = false) => {
+      status.innerHTML = `<div class="${isError ? 'error' : 'loading'}">${message}</div>`;
+    };
+
+    const clearStatus = () => { status.innerHTML = ''; };
+
+    const renderProducts = (products) => {
+      if (!products.length) {
+        results.innerHTML = '<div style="grid-column:1/-1; padding:20px; background:#fff; border-radius:16px; text-align:center;">No products found.</div>';
+        return;
+      }
+
+      results.innerHTML = products.map(product => `
+        <div class="card">
+          <div class="tag">${product.category}</div>
+          <h2>${product.name}</h2>
+          <div class="meta">ID: ${product.product_id}</div>
+          <div class="price">$${product.price.toFixed(2)}</div>
+          <div class="status">Created: ${friendlyDate(product.created_at)}<br>Updated: ${friendlyDate(product.updated_at)}</div>
+        </div>
+      `).join('');
+    };
+
+    const fetchCategories = async () => {
+      try {
+        const response = await fetch('/api/categories');
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'Unable to load categories');
+        body.categories.forEach(cat => {
+          const option = document.createElement('option');
+          option.value = cat;
+          option.textContent = cat;
+          categorySelect.appendChild(option);
+        });
+      } catch (err) {
+        showStatus(`Category load failed: ${err.message}`, true);
+      }
+    };
+
+    const loadProducts = async (cursor = null, replaceHistory = false) => {
+      isLoading = true;
+      showStatus('Loading products...');
+      updateButtons();
+
+      const params = new URLSearchParams();
+      params.set('limit', currentLimit);
+      if (currentCategory) params.set('category', currentCategory);
+      if (cursor) params.set('cursor', cursor);
+
+      try {
+        const response = await fetch('/api/products?' + params.toString());
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to load products');
+
+        renderProducts(data.data);
+        nextCursor = data.nextCursor;
+        summary.textContent = `Showing ${data.data.length} products ${currentCategory ? 'in ' + currentCategory : 'across all categories'}${data.hasMore ? '' : ' (end reached)'}`;
+        clearStatus();
+
+        if (!replaceHistory && cursor) {
+          pageHistory.push(cursor);
+        }
+
+        if (!cursor) {
+          currentCursor = null;
+          pageHistory = [];
+        }
+
+        updateButtons();
+      } catch (err) {
+        showStatus(`Load failed: ${err.message}`, true);
+      } finally {
+        isLoading = false;
+      }
+    };
+
+    prevBtn.addEventListener('click', () => {
+      if (!pageHistory.length) return;
+      const prevCursor = pageHistory.pop();
+      nextCursor = currentCursor;
+      currentCursor = prevCursor;
+      loadProducts(prevCursor, true);
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (!nextCursor) return;
+      if (currentCursor) {
+        pageHistory.push(currentCursor);
+      }
+      currentCursor = nextCursor;
+      loadProducts(nextCursor);
+    });
+
+    categorySelect.addEventListener('change', () => {
+      currentCategory = categorySelect.value;
+      pageHistory = [];
+      currentCursor = null;
+      nextCursor = null;
+      loadProducts();
+    });
+
+    pageSizeSelect.addEventListener('change', () => {
+      currentLimit = parseInt(pageSizeSelect.value, 10);
+      pageHistory = [];
+      currentCursor = null;
+      nextCursor = null;
+      loadProducts();
+    });
+
+    fetchCategories().then(() => loadProducts());
+  </script>
+</body>
+</html>
