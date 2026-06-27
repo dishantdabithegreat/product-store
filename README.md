@@ -11,7 +11,7 @@
    - Create a `.env` file in the **root folder** of the project (`product-store`).
    - Add your MongoDB credentials to the `.env` file:
      ```text
-     MONGODB_URI=your_mongodb_uri_here
+     MONGO_URI=your_mongodb_uri_here
      MONGODB_NAME=your_database_name_here
      ```
 
