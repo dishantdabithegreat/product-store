@@ -12,7 +12,7 @@
    - Add your MongoDB credentials to the `.env` file:
      ```text
      MONGO_URI=your_mongodb_uri_here
-     MONGODB_NAME=your_database_name_here
+     MONGO_DB_NAME=your_database_name_here
      ```
 
 2. **Seed the Database**
